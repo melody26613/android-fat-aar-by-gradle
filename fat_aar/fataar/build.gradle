@@ -2,6 +2,26 @@ plugins {
     id 'com.android.library'
 }
 
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
+def currentBuildType // debug | release
+def currentBuildFlavor
+def currentBuildVariant // currentBuildType + currentBuildFlavor
+def flavorList = new HashSet<>()
+def mBuildDir = buildDir.path.replace(File.separator, '/')
+
+def embeddedAarNames = new ArrayList()
+def embeddedAarFullPath = new ArrayList()
+def extractAarDirs = new ArrayList()
+def embeddedJarDir = "$mBuildDir/embeddedJar"
+
+def embeddedRJavaDir = "$mBuildDir/generated/source/r/java"
+def embeddedRClassesDir = "$mBuildDir/generated/source/r/classes"
+def embeddedRClasses = new ArrayList()
+
+def packagedResourceDir
+
 android {
     compileSdk 31
 
@@ -10,28 +30,501 @@ android {
         targetSdk 31
         versionCode 1
         versionName "1.0"
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+
+    android.libraryVariants.all { variant ->
+        variant.outputs.all {
+            def flavor = variant.getFlavorName()
+            if (flavor != null && flavor.length() > 0) {
+                flavorList.add(flavor)
+            }
+        }
+        project.ext.flavorList = flavorList // global variable for functions and tasks
+    }
+
+    afterEvaluate {
+        currentBuildType = getCurrentType()
+        currentBuildFlavor = getCurrentFlavor()
+        currentBuildVariant = getCurrentVariant()
+        println "currentBuildType: $currentBuildType, currentBuildFlavor: $currentBuildFlavor, currentBuildVariant: $currentBuildVariant"
+
+        packagedResourceDir = "$mBuildDir/intermediates/packaged_res"
+        println "packagedResourceDir: $packagedResourceDir"
+
+        configurations.embedded.each { lib ->
+            def libFileName = lib.getName()
+            def libPath = lib.getAbsolutePath().replace(File.separator, '/')
+
+            println "embedded lib: $libFileName, path: $libPath"
+
+            def (filename, ext) = libFileName.tokenize('.')
+
+            if (ext == 'aar') {
+                if (!embeddedAarNames.contains(libFileName)) {
+                    embeddedAarNames.add(libFileName)
+                }
+                if (!embeddedAarFullPath.contains(libPath)) {
+                    embeddedAarFullPath.add(libPath)
+                }
+            }
+        }
+
+        /* merge resources (res) */
+        embedLibraryResources.dependsOn extractAar
+        removeAllResourcesIfAnyDpiExist.dependsOn embedLibraryResources
+
+        /* merge classes */
+        embedClassesAndJars.dependsOn extractAar
+
+        /* merge jni */
+        embedJniLibs.dependsOn extractAar
+
+        /* merge R classes */
+        generateRJava.dependsOn extractAar
+        compileRJava.dependsOn generateRJava
+        embedRClass.dependsOn compileRJava
+        copyEmbedRJar.dependsOn embedRClass
+
+        /* merge assets */
+        embedAssets.dependsOn extractAar
     }
 }
 
-dependencies {
+def getCurrentType() {
+    Gradle gradle = getGradle()
+    return gradle.startParameter.taskNames.any{it.toLowerCase().contains("debug")} ? "debug" : "release"
+}
 
-    implementation 'androidx.appcompat:appcompat:1.4.1'
-    implementation 'com.google.android.material:material:1.5.0'
+def getCurrentFlavor() {
+    Gradle gradle = getGradle()
+    String taskReqStr = gradle.getStartParameter().getTaskRequests().toString()
+
+    Pattern pattern
+
+    if(taskReqStr.contains("assemble")) {
+        pattern = Pattern.compile("assemble(\\w+)(Release|Debug)")
+    } else {
+        pattern = Pattern.compile("generate(\\w+)(Release|Debug)")
+    }
+
+    Matcher matcher = pattern.matcher(taskReqStr)
+
+    if(matcher.find()) {
+        def flavor = matcher.group(1)
+        return flavor.uncapitalize()
+    } else {
+        println "getCurrentFlavor() there is no flavor been set"
+        return ""
+    }
+}
+
+def getCurrentVariant() {
+    def buildType = getCurrentType()
+    def buildFlavor = getCurrentFlavor()
+
+    def variant = buildType
+    if(buildFlavor != null && buildFlavor.length() > 0) {
+        variant = buildFlavor + buildType.capitalize()
+    }
+
+    return variant
+}
+
+tasks.whenTaskAdded { task ->
+    /* merge resources (res) */
+    if (task.name.startsWith("package") && task.name.contains("Release") && task.name.endsWith("Resources")) {
+        // task packageReleaseResources
+        task.dependsOn embedLibraryResources
+        removeAllResourcesIfAnyDpiExist.dependsOn task
+    }
+    if(task.name.startsWith("merge") && task.name.contains("Release") && task.name.endsWith("Resources")) {
+        // task mergeReleaseResources
+        task.dependsOn removeAllResourcesIfAnyDpiExist
+    }
+
+    /* merge classes */
+    if (task.name.startsWith("compile") && task.name.contains("Release") && task.name.endsWith("JavaWithJavac")) {
+        // task compileReleaseJavaWithJavac
+        task.dependsOn embedClassesAndJars
+    }
+
+    /* merge jni */
+    if (task.name.startsWith("bundle") && task.name.contains("Release") && task.name.endsWith("Aar")) {
+        // task bundleReleaseAar
+        task.dependsOn embedJniLibs
+    } else if (task.name.startsWith("copy") && task.name.contains("Release") && task.name.endsWith("JniLibsProjectAndLocalJars")) {
+        // task copyReleaseJniLibsProjectAndLocalJars
+        embedJniLibs.dependsOn task
+    }
+
+    /* merge R classes */
+    if (task.name.startsWith("compile") && task.name.contains("Release") && task.name.endsWith("JavaWithJavac")) {
+        // task compileReleaseJavaWithJavac
+        task.dependsOn generateRJava
+        task.dependsOn compileRJava
+    }
+    if (task.name.startsWith("generate") && task.name.contains("Release") && task.name.endsWith("RFile")) {
+        // task generateReleaseRFile
+        generateRJava.dependsOn task
+        compileRJava.dependsOn task
+    }
+    if (task.name.startsWith("bundle") && task.name.contains("Release") && task.name.endsWith("Aar")) {
+        // task bundleReleaseAar
+        task.dependsOn embedRClass
+        task.dependsOn copyEmbedRJar
+    }
+    if (task.name.startsWith("sync") && task.name.contains("Release") && task.name.endsWith("LibJars")) {
+        // task syncReleaseLibJars
+        copyEmbedRJar.dependsOn task
+    }
+
+    /* merge assets */
+    if (task.name.startsWith("generate") && task.name.contains("Release") && task.name.endsWith("Assets")) {
+        // task generateReleaseAssets
+        task.dependsOn embedAssets
+    }
+}
+
+task extractAar {
+    doLast {
+        println "task extractAar"
+
+        for (int i = 0; i < embeddedAarFullPath.size(); i++) {
+            def aarPath = embeddedAarFullPath.get(i)
+            def aarName = embeddedAarNames.get(i)
+            def (filename, ext) = aarName.tokenize('.')
+            def outputPathStr = "$mBuildDir/generated/$filename"
+
+            def aarToFile = file(aarPath)
+            def outputDir = file(outputPathStr)
+
+            println "extractAar() ready to extract aar: $aarPath, aarName: $aarName, outputPathStr: $outputPathStr"
+
+            extractAarDirs.add(outputPathStr)
+
+            copy {
+                from zipTree(aarToFile)
+                into outputDir
+            }
+        }
+    }
+}
+
+task embedJniLibs {
+    doLast {
+        println "task embedJniLibs"
+
+        extractAarDirs.each { aarPath ->
+            def source = "$aarPath/jni"
+            def jniPath = "$mBuildDir/intermediates/library_and_local_jars_jni/"
+
+            File jniDir = file(jniPath)
+            jniDir.eachDir { subDir ->
+                def destination = "${subDir.getAbsolutePath().replace(File.separator, '/')}/jni"
+                println "embedJniLibs() copy $source to $destination"
+                copy {
+                    from fileTree(dir: source)
+                    into file(destination)
+                }
+            }
+        }
+    }
+}
+
+task embedClassesAndJars {
+    doLast {
+        println "task embedClassesAndJars"
+
+        for (int i = 0; i < extractAarDirs.size(); i++) {
+            def aarPath = extractAarDirs.get(i)
+            def aarName = embeddedAarNames.get(i)
+            def (filename, ext) = aarName.tokenize('.')
+
+            FileTree aarFileTree = fileTree(dir: "$aarPath")
+            def sourceJar = aarFileTree.files.find { it.name.contains("classes.jar") }
+            def renameJar = filename + ".jar"
+            def destination = embeddedJarDir
+
+            println "embedClassesAndJars() copy source $sourceJar to $destination"
+            copy {
+                from sourceJar
+                into destination
+                rename 'classes.jar', renameJar
+            }
+        }
+    }
+}
+
+task generateRJava {
+    doLast {
+        println "task generateRJava"
+
+        def mainManifestFile = android.sourceSets.main.manifest.srcFile
+        def libPackageName = ""
+
+        if (!mainManifestFile.exists()) {
+            ant.fail("generateRJava() main manifest doesn't exist!")
+        }
+        libPackageName = new XmlParser().parse(mainManifestFile).@package
+
+        extractAarDirs.each { aarPath ->
+            def manifestFile = file("$aarPath/AndroidManifest.xml")
+            if (!manifestFile.exists()) {
+                println "generateRJava() there is no AndroidManifest.xml in $aarPath, continue to next aar"
+                return // continue in closure extractAarDirs.each
+            }
+
+            def aarManifest = new XmlParser().parse(manifestFile)
+            def aarPackageName = aarManifest.@package
+            String packagePath = aarPackageName.replace('.', '/')
+
+            def rTxt = file("$aarPath/R.txt")
+            def rMap = new ConfigObject()
+
+            if (rTxt.exists()) {
+                rTxt.eachLine { line ->
+                    def (type, subclass, name, value) = line.tokenize(' ')
+                    rMap[subclass].putAt(name, type)
+                }
+            } else {
+                println "generateRJava() file is not exist ${rTxt.getAbsolutePath().replace(File.separator, '/')}"
+            }
+
+            def resDirPath = "$packagedResourceDir/$currentBuildType"
+            if(flavorList.size() > 0) {
+                resDirPath = "$packagedResourceDir/${flavorList[0]}/$currentBuildType"
+            }
+            println "resDirPath: $resDirPath"
+
+            def stringBuilder = "package $aarPackageName;" << '\n' << '\n'
+            stringBuilder << 'public final class R {' << '\n'
+
+            rMap.each { subclass, values ->
+                stringBuilder << "  public static final class $subclass {" << '\n'
+
+                def isPackagedResExist = isPackagedResourceTypeExist(subclass, resDirPath)
+                if(isPackagedResExist) {
+                    def resList = getPackagedResourceList(subclass, resDirPath)
+                    values.each { name, type ->
+                        if (resList.contains(name)) {
+                            stringBuilder << "    public static $type $name = ${libPackageName}.R.${subclass}.${name};" << '\n'
+                        }
+                    }
+                } else {
+                    values.each { name, type ->
+                        stringBuilder << "    public static $type $name = ${libPackageName}.R.${subclass}.${name};" << '\n'
+                    }
+                }
+                stringBuilder << "  }" << '\n'
+            }
+            stringBuilder << '}' << '\n'
+
+            def currentRFileDir = "$embeddedRJavaDir/$packagePath"
+            def currentRFilePath = "$currentRFileDir/R.java"
+
+            mkdir(currentRFileDir)
+            file(currentRFilePath).write(stringBuilder.toString())
+
+            embeddedRClasses += "$packagePath/R.class"
+            embeddedRClasses += "$packagePath/R\$*.class"
+        }
+    }
+}
+
+def isPackagedResourceTypeExist(resourceType, resDirPath) {
+    def resDirExist = false
+    File resDir = file(resDirPath)
+
+    println "isPackagedResourceTypeExist() resourceType: " + resourceType
+    println "isPackagedResourceTypeExist() resDir: " + resDir
+
+    try {
+        resDir.eachDir { subDir ->
+            if (subDir.name.contains(resourceType)) {
+                resDirExist = true
+                throw new Exception("find existed packaged resource, break from closure")
+            }
+        }
+    } catch (Exception e) {
+        println "isPackagedResourceTypeExist() " + e.message
+    }
+
+    return resDirExist
+}
+
+def getPackagedResourceList(resourceType, resDirPath) {
+    Set<String> resList = new HashSet<>()
+
+    File resDir = file(resDirPath)
+
+    resDir.eachDir { subDir ->
+        if (subDir.name.contains(resourceType)) {
+            subDir.eachFile { subFile ->
+                def (filename, ext) = subFile.name.tokenize('.')
+                resList.add(filename)
+                // println "getResourceDrawableList() drawable name: " + filename
+            }
+        }
+    }
+
+    return resList
+}
+
+task compileRJava(type:JavaCompile) {
+    source = embeddedRJavaDir
+
+    def buildVariant = getCurrentVariant()
+
+    def refClassPath = "$mBuildDir/intermediates/compile_r_class_jar/" + buildVariant + "/R.jar"
+    println "compileRJava() refClassPath: $refClassPath"
+    classpath = files(refClassPath)
+
+    println "compileRJava() embeddedRClassesDir: $embeddedRClassesDir"
+    destinationDir = file(embeddedRClassesDir)
+
+    doFirst {
+        // due to task lifecycle, correctly get build variant for path of R.jar before compile
+        buildVariant = getCurrentVariant()
+        try {
+            def buildType = getCurrentType()
+            def buildFlavor = getCurrentFlavor()
+            def numOfFlavor = project.ext.flavorList.size()
+            if (numOfFlavor > 0 && (buildFlavor == null || buildFlavor.length() == 0)) {
+                println "compileRJava() number of flavor is bigger than 0, " +
+                        "but getCurrentFlavor() return nothing due to gradle parameter " +
+                        "(ex: gradle command 'gradle assembleRelease' is for all variant and is not for any specific flavor), " +
+                        "so use one of the flavor in flavorList"
+                def flavor = project.ext.flavorList[0]
+                buildVariant = flavor + buildType.capitalize()
+            }
+        } catch(Exception e) {
+            println "project.ext.flavorList still not init"
+        }
+
+        refClassPath = "$mBuildDir/intermediates/compile_r_class_jar/" + buildVariant + "/R.jar"
+
+        println "compileRJava() refClassPath: $refClassPath"
+        classpath = files(refClassPath)
+    }
+}
+
+task embedRClass(type: Jar) {
+    archiveBaseName = "embedR"
+    from embeddedRClassesDir
+    include embeddedRClasses
+    destinationDirectory = file(embeddedJarDir)
+}
+
+task copyEmbedRJar {
+    doLast {
+        println "task copyEmbedRJar"
+
+        File libsDir = file("$mBuildDir/intermediates/aar_libs_directory")
+        libsDir.eachDir { subDir ->
+            copy {
+                from file("$embeddedJarDir/embedR.jar")
+                into file("${subDir.getAbsolutePath().replace(File.separator, '/')}/libs")
+            }
+        }
+    }
+}
+
+task embedLibraryResources {
+    doLast {
+        println "task embedLibraryResources"
+
+        for (int i = 0; i < extractAarDirs.size(); i++) {
+            def aarPath = extractAarDirs.get(i)
+            def aarName = embeddedAarNames.get(i)
+            def (filename, ext) = aarName.tokenize('.')
+
+            def source = "$aarPath/res"
+
+            def sourceValue = "$source/values/values.xml"
+            def renameValue = "$source/values/" + filename + "_value.xml"
+            println "embedLibraryResources() rename $sourceValue to $renameValue"
+            file(sourceValue).renameTo(file(renameValue))
+
+            android.sourceSets.main.res.srcDirs += file(source)
+        }
+        android.sourceSets.main.res.srcDirs.each {
+            println "embedLibraryResources res.srcDirs: " + it.path
+        }
+    }
+}
+
+task removeAllResourcesIfAnyDpiExist {
+    doLast {
+        println "task removeAllResourcesIfAnyDpiExist"
+
+        if(flavorList.size() == 0) {
+            def resDirPath = "$packagedResourceDir/$currentBuildFlavor/$currentBuildType"
+            removeResourcesIfAnyDpiExist(resDirPath)
+        } else {
+            for (def flavor in flavorList) {
+                println "removeAllResourcesIfAnyDpiExist() flavor: $flavor"
+                def resDirPath = "$packagedResourceDir/$flavor/$currentBuildType"
+                removeResourcesIfAnyDpiExist(resDirPath)
+            }
+        }
+    }
+}
+
+def removeResourcesIfAnyDpiExist(resDirPath) {
+    println "removeResourcesIfAnyDpiExist() resDirPath: $resDirPath"
+
+    File resDir = file(resDirPath)
+    def resOfAnyDpi = new ArrayList()
+
+    resDir.eachDir { subDir ->
+        if (subDir.name.contains("anydpi")) {
+            subDir.eachFile { subFile ->
+                resOfAnyDpi.add(subFile.name)
+                // println "removeResourcesIfAnyDpiExist() resOfAnyDpi file: " + subFile.name
+            }
+        }
+    }
+    resDir.eachDir { subDir ->
+        if (subDir.name.contains("xhdpi")) {
+            // drawable anydpi is available, there is no need to keep duplicate resources in xhdpi or bigger dpi
+            resOfAnyDpi.each { resFile ->
+                def (filename, ext) = resFile.tokenize('.')
+                delete subDir.absolutePath + "/" + filename + ".png"
+                // println "removeResourcesIfAnyDpiExist() delete duplicate file: " + subDir.name + "/" + filename + ".png"
+            }
+        }
+    }
+}
+
+task embedAssets {
+    doLast {
+        println "task embedAssets"
+        extractAarDirs.each { aarPath ->
+            def assetDir = "$aarPath/assets"
+            println "embedAssets() add to assets.srcDirs: $assetDir"
+            android.sourceSets.main.assets.srcDirs += file(assetDir)
+        }
+        android.sourceSets.main.assets.srcDirs.each {
+            println "embedAssets assets.srcDirs: " + it.path
+        }
+    }
+}
+
+configurations {
+    embedded
+}
+
+dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.3'
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+
+    embedded files('libs/subaar1-release.aar')
+    embedded files('libs/subaar2-release.aar')
+    implementation fileTree(dir: embeddedJarDir, include: "*.jar")
 }
