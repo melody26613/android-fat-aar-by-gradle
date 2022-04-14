@@ -22,7 +22,7 @@
 
 * Build variant
 
-    fat aar build variant must use release to do obfuscate
+    build variant in fat aar must use "release" to do obfuscation
 
 ![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/build_variant.png)
 
