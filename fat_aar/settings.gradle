@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Fat aar"
-include ':app'
+include ':fataar'

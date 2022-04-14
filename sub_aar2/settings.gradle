@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Sub aar 2"
-include ':app'
+include ':subaar2'
