@@ -20,6 +20,12 @@
 
 ![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/structure.jpg)
 
+* Build variant
+
+    fat aar build variant must use release to do obfuscate
+
+![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/build_variant.png)
+
 ## Reference
 
 [android-fat-aar/fat-aar.gradle at master · adwiv/android-fat-aar · GitHub](https://github.com/adwiv/android-fat-aar/blob/master/fat-aar.gradle)
