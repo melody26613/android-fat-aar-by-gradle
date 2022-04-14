@@ -20,7 +20,11 @@ def embeddedRJavaDir = "$mBuildDir/generated/source/r/java"
 def embeddedRClassesDir = "$mBuildDir/generated/source/r/classes"
 def embeddedRClasses = new ArrayList()
 
-def packagedResourceDir
+// path in build folder
+def packagedResourceDir = "$mBuildDir/intermediates/packaged_res"
+def packagedJniDir = "$mBuildDir/intermediates/library_and_local_jars_jni/"
+def packagedRDir = "$mBuildDir/intermediates/compile_r_class_jar/"
+def packagedLibDir = "$mBuildDir/intermediates/aar_libs_directory"
 
 android {
     compileSdk 31
@@ -54,8 +58,6 @@ android {
         currentBuildFlavor = getCurrentFlavor()
         currentBuildVariant = getCurrentVariant()
         println "currentBuildType: $currentBuildType, currentBuildFlavor: $currentBuildFlavor, currentBuildVariant: $currentBuildVariant"
-
-        packagedResourceDir = "$mBuildDir/intermediates/packaged_res"
         println "packagedResourceDir: $packagedResourceDir"
 
         configurations.embedded.each { lib ->
@@ -223,7 +225,7 @@ task embedJniLibs {
 
         extractAarDirs.each { aarPath ->
             def source = "$aarPath/jni"
-            def jniPath = "$mBuildDir/intermediates/library_and_local_jars_jni/"
+            def jniPath = packagedJniDir
 
             File jniDir = file(jniPath)
             jniDir.eachDir { subDir ->
@@ -382,9 +384,9 @@ task compileRJava(type:JavaCompile) {
 
     def buildVariant = getCurrentVariant()
 
-    def refClassPath = "$mBuildDir/intermediates/compile_r_class_jar/" + buildVariant + "/R.jar"
+    def refClassPath = packagedRDir + buildVariant + "/R.jar"
     println "compileRJava() refClassPath: $refClassPath"
-    classpath = files(refClassPath)
+    classpath = files(refClassPath) // include fat aar R.jar
 
     println "compileRJava() embeddedRClassesDir: $embeddedRClassesDir"
     destinationDir = file(embeddedRClassesDir)
@@ -408,10 +410,10 @@ task compileRJava(type:JavaCompile) {
             println "project.ext.flavorList still not init"
         }
 
-        refClassPath = "$mBuildDir/intermediates/compile_r_class_jar/" + buildVariant + "/R.jar"
+        refClassPath = packagedRDir + buildVariant + "/R.jar"
 
         println "compileRJava() refClassPath: $refClassPath"
-        classpath = files(refClassPath)
+        classpath = files(refClassPath) // include fat aar R.jar
     }
 }
 
@@ -426,7 +428,7 @@ task copyEmbedRJar {
     doLast {
         println "task copyEmbedRJar"
 
-        File libsDir = file("$mBuildDir/intermediates/aar_libs_directory")
+        File libsDir = file(packagedLibDir)
         libsDir.eachDir { subDir ->
             copy {
                 from file("$embeddedJarDir/embedR.jar")
