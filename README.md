@@ -18,7 +18,7 @@
 
 * Project structure
 
-![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/structure.png)
+![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/structure.jpg)
 
 ## Reference
 
