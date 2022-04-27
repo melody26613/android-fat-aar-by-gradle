@@ -2,9 +2,9 @@
 
 * Merge sub aar to a aar, called "fat-aar"
 
-* Merge resources include: res, class, jni, R, assets
+* Merge resources included: res, class, jni, R, assets
     
-    **not merge** AndroidManifest.xml and libs/*.jar currently
+    **not merged** AndroidManifest.xml and libs/*.jar currently
 
 ## Version info
 
@@ -12,19 +12,19 @@
 
 * Gradle version: <span style="background-color: #FFFF00">6.5</span>
 
-## Description
+## Abstract
 
-* For detail, please reference slide **slide/Android_fat_aar.pdf** and code **fat_aar/fataar/build.gradle**
+* For detail, please reference [slides/Android_fat_aar.pdf](https://github.com/melody26613/android-fat-aar-by-gradle/blob/master/slides/Android_fat_aar.pdf) and code [fat_aar/fataar/build.gradle](https://github.com/melody26613/android-fat-aar-by-gradle/blob/master/fat_aar/fataar/build.gradle)
 
 * Project structure
 
-![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/structure.jpg)
+![image](https://github.com/melody26613/fat_aar_sample/blob/master/slides/structure.jpg)
 
 * Build variant
 
     build variant in fat aar must use "release" to do obfuscation
 
-![image](https://github.com/melody26613/fat_aar_sample/blob/master/slide/build_variant.png)
+![image](https://github.com/melody26613/fat_aar_sample/blob/master/slides/build_variant.png)
 
 ## Reference
 
