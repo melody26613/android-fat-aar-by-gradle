@@ -6,6 +6,7 @@ import android.view.LayoutInflater;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.constraintlayout.widget.ConstraintLayout;
 
 import com.example.subaar1.SubAar1;
@@ -14,14 +15,10 @@ import com.example.subaar2.SubAar2;
 public class FatAar {
     private final static String TAG = FatAar.class.getSimpleName();
 
-    private FrameLayout rootLayout = null;
-    private Context context = null;
+    private final FrameLayout rootLayout;
+    private final Context context;
 
-    public FatAar(FrameLayout layout) {
-        if (layout == null) {
-            Log.i(TAG, "layout is null, please set valid layout..");
-            return;
-        }
+    public FatAar(@NonNull FrameLayout layout) {
         rootLayout = layout;
         context = rootLayout.getContext();
 

@@ -1,22 +1,22 @@
 package com.example.subaar2;
 
+import android.app.Activity;
 import android.content.Context;
-import android.util.Log;
+
+import androidx.annotation.NonNull;
 
 public class SubAar2 {
-    private final static String TAG = SubAar2.class.getSimpleName();
+	private final Context appContext;
 
-    private Context context = null;
+	public SubAar2(@NonNull Context context) {
+		if (context instanceof Activity) {
+			this.appContext = context.getApplicationContext();
+		} else {
+			this.appContext = context;
+		}
+	}
 
-    public SubAar2(Context context) {
-        this.context = context;
-    }
-
-    public String getText() {
-        if (context == null) {
-            Log.i(TAG, "context is null, please set valid context..");
-            return "";
-        }
-        return context.getResources().getString(R.string.sub_aar_2_text);
-    }
+	public String getText() {
+		return appContext.getResources().getString(R.string.sub_aar_2_text);
+	}
 }

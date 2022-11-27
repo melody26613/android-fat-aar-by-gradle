@@ -531,6 +531,7 @@ configurations {
 
 dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.3'
+    implementation 'androidx.annotation:annotation:1.3.0'
 
     embedded files('libs/subaar1-release.aar')
     embedded files('libs/subaar2-release.aar')
