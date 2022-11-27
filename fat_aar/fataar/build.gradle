@@ -43,6 +43,10 @@ android {
         }
     }
 
+    buildFeatures {
+        viewBinding true
+    }
+
     variantFilter { variant ->
         if (variant.buildType.name == "debug") {
             setIgnore(true)
