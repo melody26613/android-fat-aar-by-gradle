@@ -20,11 +20,11 @@
 
 ![image](https://github.com/melody26613/fat_aar_sample/blob/master/slides/structure.jpg)
 
-* Build variant
+* Build fat aar
 
-    build variant in fat aar must use "release" to do obfuscation
+    must clean build fat aar
 
-![image](https://github.com/melody26613/fat_aar_sample/blob/master/slides/build_variant.png)
+![image](https://github.com/melody26613/fat_aar_sample/blob/master/slides/build_fat_aar.png)
 
 ## Reference
 
